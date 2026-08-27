@@ -50,3 +50,4 @@ Usa `.env.example` como referencia. No subas un archivo `.env` real a GitHub.
 ## Modo demostración
 
 Si faltan variables, el formulario avisa que no puede guardar y el panel muestra datos ficticios identificados como demostrativos. Al configurar Supabase y la contraseña, el panel cambia automáticamente a los datos reales.
+Aplicación desplegada en Vercel.
