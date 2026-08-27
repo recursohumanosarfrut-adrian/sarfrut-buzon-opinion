@@ -99,10 +99,10 @@ export async function POST(request: Request) {
     return Response.json({ error: "Solicitud no permitida." }, { status: 403 })
   }
 
-  const apiKey = process.env.OPENAI_API_KEY
+  const apiKey = process.env.GROQ_API_KEY
   if (!apiKey) {
     return Response.json(
-      { error: "El analisis con IA aun no esta configurado." },
+      { error: "El analisis gratuito con IA aun no esta configurado." },
       { status: 503 },
     )
   }
@@ -125,17 +125,14 @@ export async function POST(request: Request) {
       )
     }
 
-    const openAIResponse = await fetch("https://api.openai.com/v1/responses", {
+    const groqResponse = await fetch("https://api.groq.com/openai/v1/responses", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: process.env.OPENAI_MODEL || "gpt-5-mini",
-        store: false,
-        reasoning: { effort: "low" },
-        max_output_tokens: 1800,
+        model: process.env.GROQ_MODEL || "openai/gpt-oss-120b",
         instructions,
         input: `Analiza la siguiente denuncia anonima. Fecha de registro: ${opinion.created_at}.\n\n<denuncia>\n${opinion.message}\n</denuncia>`,
         text: {
@@ -149,12 +146,12 @@ export async function POST(request: Request) {
       }),
     })
 
-    const payload = (await openAIResponse.json()) as {
+    const payload = (await groqResponse.json()) as {
       error?: { message?: string }
       output?: unknown
     }
-    if (!openAIResponse.ok) {
-      console.error("OpenAI analysis failed", openAIResponse.status, payload.error?.message)
+    if (!groqResponse.ok) {
+      console.error("Groq analysis failed", groqResponse.status, payload.error?.message)
       return Response.json(
         { error: "No fue posible generar el analisis en este momento." },
         { status: 502 },
@@ -182,4 +179,3 @@ export async function POST(request: Request) {
     )
   }
 }
-
