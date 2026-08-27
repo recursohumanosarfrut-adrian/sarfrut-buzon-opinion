@@ -7,12 +7,16 @@ import {
   ArrowLeft,
   Award,
   CalendarDays,
+  CheckCircle2,
+  Clock3,
   Eye,
   Lightbulb,
+  ListChecks,
   LockKeyhole,
   LogOut,
   MessageSquareText,
   RefreshCw,
+  Search,
   Sparkles,
   TriangleAlert,
   TrendingUp,
@@ -66,6 +70,10 @@ import {
   type Opinion,
   type OpinionType,
 } from "@/lib/opinions"
+import type {
+  ComplaintAnalysis,
+  ComplaintPriority,
+} from "@/lib/ai-analysis"
 
 const chartConfig = {
   sugerencia: { label: "Sugerencias", color: OPINION_COLORS.sugerencia },
@@ -80,6 +88,20 @@ const typeIcons: Record<OpinionType, typeof Lightbulb> = {
   sugerencia: Lightbulb,
   reconocimiento: Award,
   denuncia: TriangleAlert,
+}
+
+const priorityLabels: Record<ComplaintPriority, string> = {
+  baja: "Prioridad baja",
+  media: "Prioridad media",
+  alta: "Prioridad alta",
+  critica: "Prioridad crítica",
+}
+
+const priorityStyles: Record<ComplaintPriority, React.CSSProperties> = {
+  baja: { background: "#e7f4eb", color: "#08783f" },
+  media: { background: "#fff1db", color: "#9c5700" },
+  alta: { background: "#fde9e5", color: "#b63d28" },
+  critica: { background: "#b42318", color: "#ffffff" },
 }
 
 function monthKey(date: Date) {
@@ -120,6 +142,9 @@ export default function InternalDashboard() {
   const [typeFilter, setTypeFilter] = useState<"all" | OpinionType>("all")
   const [period, setPeriod] = useState("12")
   const [selected, setSelected] = useState<Opinion | null>(null)
+  const [analyses, setAnalyses] = useState<Record<string, ComplaintAnalysis>>({})
+  const [analysisLoading, setAnalysisLoading] = useState<string | null>(null)
+  const [analysisError, setAnalysisError] = useState<string | null>(null)
 
   const loadOpinions = useCallback(async () => {
     setLoading(true)
@@ -179,6 +204,50 @@ export default function InternalDashboard() {
     setAuthorized(false)
     setNeedsLogin(true)
     setOpinions([])
+    setAnalyses({})
+  }
+
+  function openOpinion(opinion: Opinion) {
+    setAnalysisError(null)
+    setSelected(opinion)
+  }
+
+  async function analyzeSelectedComplaint() {
+    if (!selected || selected.type !== "denuncia") return
+
+    const opinionId = selected.id
+    setAnalysisLoading(opinionId)
+    setAnalysisError(null)
+    try {
+      const response = await fetch("/api/admin/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ opinionId }),
+      })
+      const payload = await response.json().catch(() => ({}))
+
+      if (response.status === 401) {
+        setSelected(null)
+        setAuthorized(false)
+        setNeedsLogin(true)
+        throw new Error("La sesión terminó. Ingresa nuevamente para continuar.")
+      }
+      if (!response.ok || !payload.analysis) {
+        throw new Error(payload.error || "No fue posible generar el análisis.")
+      }
+
+      setAnalyses((current) => ({
+        ...current,
+        [opinionId]: payload.analysis as ComplaintAnalysis,
+      }))
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "No fue posible generar el análisis."
+      setAnalysisError(message)
+      toast.error("No se pudo analizar la denuncia", { description: message })
+    } finally {
+      setAnalysisLoading(null)
+    }
   }
 
   const filtered = useMemo(() => {
@@ -519,14 +588,22 @@ export default function InternalDashboard() {
             </TableHeader>
             <TableBody>
               {filtered.map((opinion) => (
-                <TableRow key={opinion.id} onClick={() => setSelected(opinion)} className="cursor-pointer">
+                <TableRow key={opinion.id} onClick={() => openOpinion(opinion)} className="cursor-pointer">
                   <TableCell className="px-5 text-[#607268] sm:px-6">
                     {new Intl.DateTimeFormat("es-MX", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(opinion.created_at))}
                   </TableCell>
                   <TableCell><TypePill type={opinion.type} /></TableCell>
                   <TableCell className="max-w-[480px] truncate text-[#52665b]">{opinion.message}</TableCell>
                   <TableCell className="pr-5 text-right sm:pr-6">
-                    <Button variant="ghost" size="icon-sm" aria-label="Ver opinión" onClick={() => setSelected(opinion)}>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label="Ver opinión"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        openOpinion(opinion)
+                      }}
+                    >
                       <Eye className="text-[#08783f]" />
                     </Button>
                   </TableCell>
@@ -543,7 +620,7 @@ export default function InternalDashboard() {
       </div>
 
       <Dialog open={Boolean(selected)} onOpenChange={(open) => !open && setSelected(null)}>
-        <DialogContent className="rounded-2xl border-[#d9e5dd] sm:max-w-xl">
+        <DialogContent className="max-h-[90vh] overflow-y-auto rounded-2xl border-[#d9e5dd] sm:max-w-2xl">
           {selected && (
             <>
               <DialogHeader>
@@ -560,10 +637,158 @@ export default function InternalDashboard() {
                 <LockKeyhole className="size-3.5 text-[#08783f]" />
                 Este registro no contiene campos de identidad del remitente.
               </p>
+
+              {selected.type === "denuncia" && (
+                <section className="ai-analysis-panel" aria-live="polite">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <p className="flex items-center gap-2 text-sm font-bold text-[#173126]">
+                        <Sparkles className="size-4 text-[#08783f]" />
+                        Orientación asistida por IA
+                      </p>
+                      <p className="mt-1 max-w-lg text-xs leading-5 text-[#718078]">
+                        Apoyo privado para priorizar la revisión y preparar un plan de atención.
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={analyzeSelectedComplaint}
+                      disabled={analysisLoading === selected.id}
+                      className="shrink-0 rounded-lg bg-[#08783f] hover:bg-[#066833]"
+                    >
+                      {analysisLoading === selected.id ? (
+                        <RefreshCw className="animate-spin" />
+                      ) : (
+                        <Sparkles />
+                      )}
+                      {analysisLoading === selected.id
+                        ? "Analizando…"
+                        : analyses[selected.id]
+                          ? "Analizar nuevamente"
+                          : "Analizar denuncia"}
+                    </Button>
+                  </div>
+
+                  {analysisError && (
+                    <div className="mt-4 rounded-xl border border-[#f2c8bf] bg-[#fff5f3] p-3 text-xs leading-5 text-[#a53a27]">
+                      {analysisError}
+                    </div>
+                  )}
+
+                  {analysisLoading === selected.id && !analyses[selected.id] && (
+                    <div className="mt-4 flex items-center gap-3 rounded-xl bg-white p-4 text-sm text-[#52665b]">
+                      <RefreshCw className="size-4 animate-spin text-[#08783f]" />
+                      Revisando riesgos y posibles acciones de seguimiento…
+                    </div>
+                  )}
+
+                  {analyses[selected.id] && (
+                    <div className="mt-5 space-y-4">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span
+                          className="rounded-full px-3 py-1 text-xs font-bold"
+                          style={priorityStyles[analyses[selected.id].priority]}
+                        >
+                          {priorityLabels[analyses[selected.id].priority]}
+                        </span>
+                        <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-[#52665b]">
+                          Información {analyses[selected.id].informationSufficiency}
+                        </span>
+                        <span className="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1 text-xs font-semibold text-[#52665b]">
+                          <Clock3 className="size-3.5 text-[#08783f]" />
+                          {analyses[selected.id].timeframe}
+                        </span>
+                      </div>
+
+                      <div className="rounded-xl bg-white p-4">
+                        <p className="text-xs font-bold tracking-[0.08em] text-[#08783f] uppercase">
+                          Lectura inicial
+                        </p>
+                        <p className="mt-2 text-sm leading-6 text-[#365849]">
+                          {analyses[selected.id].summary}
+                        </p>
+                      </div>
+
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <AnalysisList
+                          icon={TriangleAlert}
+                          title="Riesgos a revisar"
+                          items={analyses[selected.id].riskCategories}
+                        />
+                        <AnalysisList
+                          icon={CheckCircle2}
+                          title="Acciones recomendadas"
+                          items={analyses[selected.id].recommendedActions}
+                        />
+                        <AnalysisList
+                          icon={Search}
+                          title="Preguntas de investigación"
+                          items={analyses[selected.id].investigationQuestions}
+                        />
+                        <AnalysisList
+                          icon={ListChecks}
+                          title="Áreas sugeridas"
+                          items={analyses[selected.id].responsibleAreas}
+                        />
+                      </div>
+
+                      {analyses[selected.id].cautions.length > 0 && (
+                        <div className="rounded-xl border border-[#f1d4a7] bg-[#fff8ec] p-4">
+                          <p className="text-xs font-bold text-[#91510a]">Consideraciones</p>
+                          <ul className="mt-2 space-y-1.5 text-xs leading-5 text-[#775329]">
+                            {analyses[selected.id].cautions.map((item, index) => (
+                              <li key={`${item}-${index}`} className="flex gap-2">
+                                <span aria-hidden="true">•</span>
+                                <span>{item}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      <p className="text-[11px] leading-5 text-[#718078]">
+                        La IA ofrece orientación preliminar. No verifica los hechos, no determina culpabilidad y no sustituye la investigación interna ni la asesoría legal.
+                      </p>
+                    </div>
+                  )}
+                </section>
+              )}
             </>
           )}
         </DialogContent>
       </Dialog>
     </main>
+  )
+}
+
+function AnalysisList({
+  icon: Icon,
+  title,
+  items,
+}: {
+  icon: typeof TriangleAlert
+  title: string
+  items: string[]
+}) {
+  return (
+    <div className="rounded-xl bg-white p-4">
+      <p className="flex items-center gap-2 text-xs font-bold text-[#173126]">
+        <Icon className="size-4 text-[#08783f]" />
+        {title}
+      </p>
+      {items.length ? (
+        <ul className="mt-3 space-y-2 text-xs leading-5 text-[#52665b]">
+          {items.map((item, index) => (
+            <li key={`${item}-${index}`} className="flex gap-2">
+              <span className="mt-[7px] size-1.5 shrink-0 rounded-full bg-[#f49a1a]" />
+              <span>{item}</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-3 text-xs text-[#809087]">Sin elementos identificados.</p>
+      )}
+    </div>
   )
 }
