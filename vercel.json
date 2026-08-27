@@ -1,5 +1,5 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
-  "buildCommand": "npm install --no-save --package-lock=false next@16.2.5 && npx next build"
+  "buildCommand": "npx next build"
 }
